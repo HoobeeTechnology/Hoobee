@@ -88,20 +88,20 @@
  */
 
 // How often to perform periodic event
-#define SBP_PERIODIC_EVT_PERIOD                   2000
+#define SBP_PERIODIC_EVT_PERIOD                   2000  
 
 // What is the advertising interval when device is discoverable (units of 625us, 160=100ms)
-#define DEFAULT_ADVERTISING_INTERVAL          3600 //800*625us
+#define DEFAULT_ADVERTISING_INTERVAL          3200 //800*625us  //增加广播周期
 
 // Limited discoverable mode advertises for 30.72s, and then stops
 // General discoverable mode advertises indefinitely
 
 #if defined ( CC2540_MINIDK )
-#define DEFAULT_DISCOVERABLE_MODE             GAP_ADTYPE_FLAGS_GENERAL
+#define DEFAULT_DISCOVERABLE_MODE             GAP_ADTYPE_FLAGS_GENERAL  //有LIMITED改为GENERAL，一直广播
 #else
 #define DEFAULT_DISCOVERABLE_MODE             GAP_ADTYPE_FLAGS_GENERAL
 #endif  // defined ( CC2540_MINIDK )
-
+#define LCD_WRITE_STRING_VALUE(title, value, format, line)  HalLcdWriteStringValue( (title), (value), (format), (line) )
 // Minimum connection interval (units of 1.25ms, 80=100ms) if automatic parameter update request is enabled
 #define DEFAULT_DESIRED_MIN_CONN_INTERVAL     80
 
@@ -114,6 +114,7 @@
 // Supervision timeout value (units of 10ms, 1000=10s) if automatic parameter update request is enabled
 #define DEFAULT_DESIRED_CONN_TIMEOUT          1000
 
+#define DEFAULT_DESIRED_REEI_RATE             100
 // Whether to enable automatic parameter update request when a connection is formed
 #define DEFAULT_ENABLE_UPDATE_REQUEST         TRUE
 
@@ -157,7 +158,41 @@ static gaprole_States_t gapProfileState = GAPROLE_INIT;
 
 // GAP - SCAN RSP data (max size = 31 bytes)
 static uint8 scanRspData[] =
-{0x00
+{// complete name
+  0x14,   // length of this data
+  GAP_ADTYPE_LOCAL_NAME_COMPLETE,
+  0x53,   // 'S'
+  0x69,   // 'i'
+  0x6d,   // 'm'
+  0x70,   // 'p'
+  0x6c,   // 'l'
+  0x65,   // 'e'
+  0x42,   // 'B'
+  0x4c,   // 'L'
+  0x45,   // 'E'
+  0x50,   // 'P'
+  0x65,   // 'e'
+  0x72,   // 'r'
+  0x69,   // 'i'
+  0x70,   // 'p'
+  0x68,   // 'h'
+  0x65,   // 'e'
+  0x72,   // 'r'
+  0x61,   // 'a'
+  0x6c,   // 'l'
+
+  // connection interval range
+  0x05,   // length of this data
+  GAP_ADTYPE_SLAVE_CONN_INTERVAL_RANGE,
+  LO_UINT16( DEFAULT_DESIRED_MIN_CONN_INTERVAL ),   // 100ms
+  HI_UINT16( DEFAULT_DESIRED_MIN_CONN_INTERVAL ),
+  LO_UINT16( DEFAULT_DESIRED_MAX_CONN_INTERVAL ),   // 1s
+  HI_UINT16( DEFAULT_DESIRED_MAX_CONN_INTERVAL ),
+
+  // Tx power level
+  0x02,   // length of this data
+  GAP_ADTYPE_POWER_LEVEL,
+  0       // 0dBm
 };
 
 // GAP - Advertisement data (max size = 31 bytes, though this is
@@ -181,12 +216,14 @@ static uint8 advertData[] =
   0x15,
   /*Device UUID (16 Bytes)*/
   0xFD, 0xA5, 0x06, 0x93, 0xA4, 0xE2, 0x4F,0xB1, 0xAF, 0xCF, 0xC6, 0xEB, 0x07, 0x64, 0x78, 0x25,
+  
+  //UUID在这里修改
   /*Major Value (2 Bytes)*/
   0x27, 0x29,
-  
+  //Major Value 在这里修改
   /*Minor Value (2 Bytes)*/
-  0xB1,0x70,
-  
+  0xB1,0x6C,
+  //Minor Value在这里修改
   /*Measured Power*/
   0xCD
 };
@@ -210,8 +247,47 @@ static void simpleBLEPeripheral_HandleKeys( uint8 shift, uint8 keys );
 static char *bdAddr2Str ( uint8 *pAddr );
 #endif // (defined HAL_LCD) && (HAL_LCD == TRUE)
 
-
-
+uint8 P0_7Last=0;
+int flag=true;
+static void RssiRead( int8 newRSSI );
+/*static void RssiRead( int8 newRSSI )
+{
+  uint8 charValue2_0 = 0;
+  uint8 charValue2_1 = 1;
+  if((-newRSSI)<=0x45&&(-newRSSI)>=0x40){
+    P0_7 = P0_7Last;
+    SimpleProfile_SetParameter( SIMPLEPROFILE_CHAR2, sizeof ( uint8 ), &P0_7Last );
+    //flag=true;
+  }
+  else if((-newRSSI)>0x45){
+    P0_7 = 0;//你的处理 &&flag==true
+    SimpleProfile_SetParameter( SIMPLEPROFILE_CHAR2, sizeof ( uint8 ), &charValue2_0 );
+    P0_7Last=P0_7;
+    //flag=false;
+  }
+  else if((-newRSSI)<0x40){
+    P0_7=1;
+    SimpleProfile_SetParameter( SIMPLEPROFILE_CHAR2, sizeof ( uint8 ), &charValue2_1 );
+    P0_7Last=P0_7;
+    //flag=false;
+  }
+  LCD_WRITE_STRING_VALUE( "RSSI -dB:", (uint8) (-newRSSI), 10, HAL_LCD_LINE_4 );
+}*/
+//实现靠近门时解锁，远离门上锁
+static void RssiRead( int8 newRSSI )
+{
+  uint8 charValue2_0 = 0;
+  uint8 charValue2_1 = 1;
+  if((-newRSSI)<=0x32){
+    P0_7 = 1;
+    SimpleProfile_SetParameter( SIMPLEPROFILE_CHAR2, sizeof ( uint8 ), &charValue2_1 );
+  }
+  else if((-newRSSI)>0x4C){
+    P0_7 = 0;//你的处理 &&flag==true
+    SimpleProfile_SetParameter( SIMPLEPROFILE_CHAR2, sizeof ( uint8 ), &charValue2_0 );
+  }
+  LCD_WRITE_STRING_VALUE( "RSSI -dB:", (uint8) (-newRSSI), 10, HAL_LCD_LINE_4 );
+}
 /*********************************************************************
  * PROFILE CALLBACKS
  */
@@ -220,8 +296,8 @@ static char *bdAddr2Str ( uint8 *pAddr );
 static gapRolesCBs_t simpleBLEPeripheral_PeripheralCBs =
 {
   peripheralStateNotificationCB,  // Profile State Change Callbacks
-  NULL                            // When a valid RSSI is read from controller (not used by application)
-};
+  RssiRead                        // When a valid RSSI is read from controller (not used by application)
+};//加入RssiRead回调函数
 
 // GAP Bond Manager Callbacks
 static gapBondCBs_t simpleBLEPeripheral_BondMgrCBs =
@@ -233,8 +309,11 @@ static gapBondCBs_t simpleBLEPeripheral_BondMgrCBs =
 // Simple GATT Profile Callbacks
 static simpleProfileCBs_t simpleBLEPeripheral_SimpleProfileCBs =
 {
-  NULL//simpleProfileChangeCB    // Charactersitic value change callback
+  simpleProfileChangeCB    // Charactersitic value change callback
 };
+
+// GAP Role Callbacks
+
 
 /*********************************************************************
  * PUBLIC FUNCTIONS
@@ -256,12 +335,13 @@ static simpleProfileCBs_t simpleBLEPeripheral_SimpleProfileCBs =
  */
 void SimpleBLEPeripheral_Init( uint8 task_id )
 {
+  HCI_EXT_SetTxPowerCmd(LL_EXT_TX_POWER_MINUS_6_DBM);
   simpleBLEPeripheral_TaskID = task_id;
   if(osal_snv_read(0xfe,1,&gMP)!=NV_OPER_FAILED){
 	advertData[29]=gMP;
   }
   // Setup the GAP
-  VOID GAP_SetParamValue( TGAP_CONN_PAUSE_PERIPHERAL, DEFAULT_CONN_PAUSE_PERIPHERAL );
+  VOID GAP_SetParamValue( TGAP_CONN_PAUSE_PERIPHERAL, DEFAULT_CONN_PAUSE_PERIPHERAL );//连接间隙
   
   // Setup the GAP Peripheral Role Profile
   {
@@ -283,15 +363,18 @@ void SimpleBLEPeripheral_Init( uint8 task_id )
     uint16 desired_max_interval = DEFAULT_DESIRED_MAX_CONN_INTERVAL;
     uint16 desired_slave_latency = DEFAULT_DESIRED_SLAVE_LATENCY;
     uint16 desired_conn_timeout = DEFAULT_DESIRED_CONN_TIMEOUT;
-
+    uint16 desired_rssi_rate=DEFAULT_DESIRED_REEI_RATE;
     // Set the GAP Role Parameters
     GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &initial_advertising_enable );
-    GAPRole_SetParameter( GAPROLE_ADVERT_OFF_TIME, sizeof( uint16 ), &gapRole_AdvertOffTime );
+    //GAPRole_SetParameter( GAPROLE_ADVERT_OFF_TIME, sizeof( uint16 ), &gapRole_AdvertOffTime );
 
     GAPRole_SetParameter( GAPROLE_SCAN_RSP_DATA, sizeof ( scanRspData ), scanRspData );
     GAPRole_SetParameter( GAPROLE_ADVERT_DATA, sizeof( advertData ), advertData );
-
+    
+    GAPRole_SetParameter(GAPROLE_RSSI_READ_RATE,sizeof(uint16),&desired_rssi_rate);//设定RSSI的参数值
+    
     GAPRole_SetParameter( GAPROLE_PARAM_UPDATE_ENABLE, sizeof( uint8 ), &enable_update_request );
+    
     GAPRole_SetParameter( GAPROLE_MIN_CONN_INTERVAL, sizeof( uint16 ), &desired_min_interval );
     GAPRole_SetParameter( GAPROLE_MAX_CONN_INTERVAL, sizeof( uint16 ), &desired_max_interval );
     GAPRole_SetParameter( GAPROLE_SLAVE_LATENCY, sizeof( uint16 ), &desired_slave_latency );
@@ -337,7 +420,7 @@ void SimpleBLEPeripheral_Init( uint8 task_id )
   // Setup the SimpleProfile Characteristic Values
   {
     uint8 charValue1 = 1;
-    uint8 charValue2 = 2;
+    uint8 charValue2 = 0;
     uint8 charValue3 = 3;
     uint8 charValue4 = 4;
     uint8 charValue5[SIMPLEPROFILE_CHAR5_LEN] = { 1, 2, 3, 4, 5 };
@@ -448,6 +531,10 @@ uint16 SimpleBLEPeripheral_ProcessEvent( uint8 task_id, uint16 events )
 
   if ( events & SBP_START_DEVICE_EVT )
   {
+    P0_7 = 0;  //防止继电器跳变，初始化为高
+    P0DIR |= BV(7); //设置为输出
+    P0SEL &=~BV(7); //设置该脚为普通GPIO
+    //HCI_EXT_SetTxPowerCmd (HCI_EXT_TX_POWER_MINUS_23_DBM);
     // Start the Device
     VOID GAPRole_StartDevice( &simpleBLEPeripheral_PeripheralCBs );
 
@@ -632,6 +719,7 @@ static void peripheralStateNotificationCB( gaprole_States_t newState )
       {
         #if (defined HAL_LCD) && (HAL_LCD == TRUE)
           HalLcdWriteString( "Disconnected",  HAL_LCD_LINE_3 );
+          P0_7=0;
         #endif // (defined HAL_LCD) && (HAL_LCD == TRUE)
       }
       break;
@@ -739,7 +827,7 @@ static void simpleProfileChangeCB( uint8 paramID )
       #endif // (defined HAL_LCD) && (HAL_LCD == TRUE)
 
       break;
-
+   
     case SIMPLEPROFILE_CHAR3:
       SimpleProfile_GetParameter( SIMPLEPROFILE_CHAR3, &newValue );
 
